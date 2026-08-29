@@ -46,6 +46,21 @@ type AskAnswer = TextAnswer | OptionAnswer | OtherAnswer;
 type AskUserQuestionStatus = "answered" | "cancelled" | "unavailable";
 type AskUserQuestionMode = "text" | "single-select" | "multi-select";
 
+/** Stable inter-extension signals; payload additions must remain JSON-safe. */
+export const ASK_USER_PROMPT_EVENT = "pi-learn:ask-user:prompt" as const;
+export const ASK_USER_BLOCKED_EVENT = "pi-learn:ask-user:blocked" as const;
+
+export interface AskUserPromptEventPayload {
+	question: string;
+	context?: string;
+	mode: AskUserQuestionMode;
+	options: Array<{ label: string; description?: string }>;
+}
+
+export interface AskUserBlockedEventPayload {
+	active: boolean;
+}
+
 interface AskUserQuestionResultDetails {
 	status: AskUserQuestionStatus;
 	question: string;
@@ -538,6 +553,81 @@ async function askMultiChoice(
 	});
 }
 
+function emitAskUserPrompt(pi: ExtensionAPI, question: string, context: string | undefined, mode: AskUserQuestionMode, options: AskOption[]): void {
+	pi.events.emit(ASK_USER_PROMPT_EVENT, {
+		question,
+		context,
+		mode,
+		options: options.map(({ label, description }) => description ? { label, description } : { label }),
+	} satisfies AskUserPromptEventPayload);
+}
+
+function emitAskUserBlocked(pi: ExtensionAPI, active: boolean): void {
+	pi.events.emit(ASK_USER_BLOCKED_EVENT, { active } satisfies AskUserBlockedEventPayload);
+}
+
+function rpcTitle(question: string, context: string | undefined, options: AskOption[]): string {
+	const parts = [question];
+	if (context) parts.push(context);
+	if (options.length > 0) {
+		const list = options
+			.map((option, index) => `${index + 1}. ${option.label}${option.description ? ` — ${option.description}` : ""}`)
+			.join("\n");
+		parts.push(`Options:\n${list}`);
+	}
+	return parts.join("\n\n");
+}
+
+/** Use native dialog primitives when an RPC host cannot render terminal custom UI. */
+async function askWithRpcDialogs(
+	ctx: ExtensionContext,
+	question: string,
+	context: string | undefined,
+	mode: AskUserQuestionMode,
+	options: AskOption[],
+): Promise<AskAnswer[] | null> {
+	const title = rpcTitle(question, context, options);
+	if (mode === "text") {
+		const answer = await ctx.ui.input(title, "Type your answer");
+		return answer === undefined ? null : [{ type: "text", label: answer.trim(), value: answer.trim() }];
+	}
+
+	if (mode === "single-select") {
+		const otherLabel = getOtherLabel(options);
+		const selected = await ctx.ui.select(title, [...options.map((option) => option.label), otherLabel]);
+		if (selected === undefined) return null;
+		if (selected === otherLabel) {
+			const answer = await ctx.ui.input(question, "Type your answer");
+			return answer === undefined ? null : [{ type: "other", label: answer.trim(), value: answer.trim() }];
+		}
+		const index = options.findIndex((option) => option.label === selected);
+		const option = options[index];
+		return option ? [{ type: "option", label: option.label, value: option.value, index: index + 1 }] : null;
+	}
+
+	const answer = await ctx.ui.input(`${title}\n\nEnter comma-separated option numbers, or custom text.`, "e.g. 1, 3");
+	if (answer === undefined) return null;
+	const selected = new Map<number, AskAnswer>();
+	const custom: string[] = [];
+	for (const token of answer.split(",").map((part) => part.trim()).filter(Boolean)) {
+		const index = /^\d+$/.test(token) ? Number(token) - 1 : -1;
+		const option = options[index];
+		if (option) selected.set(index, { type: "option", label: option.label, value: option.value, index: index + 1 });
+		else custom.push(token);
+	}
+	if (custom.length > 0) selected.set(Number.MAX_SAFE_INTEGER, { type: "other", label: custom.join(", "), value: custom.join(", ") });
+	const answers = sortAnswers(Array.from(selected.values()));
+	return answers.length > 0 ? answers : null;
+}
+
+/** Keep this tool out of model requests that cannot render a user dialog. */
+export function reconcileAskUserQuestionTool(pi: ExtensionAPI, ctx: ExtensionContext): void {
+	const active = pi.getActiveTools();
+	const hasTool = active.includes("ask_user_question");
+	if (!ctx.hasUI && hasTool) pi.setActiveTools(active.filter((name) => name !== "ask_user_question"));
+	else if (ctx.hasUI && !hasTool) pi.setActiveTools([...active, "ask_user_question"]);
+}
+
 // Shared UI mutex. ctx.ui.custom()/editor can only handle one active call at
 // a time, so ALL pop-up-style tools (ask_user_question, quiz, ...) must
 // serialize against each other, not just against themselves. We stash one
@@ -589,39 +679,50 @@ export default function askUserQuestion(pi: ExtensionAPI) {
 			const context = params.details?.trim() || undefined;
 			const mode: AskUserQuestionMode = options.length === 0 ? "text" : params.multiSelect ? "multi-select" : "single-select";
 
-			if (signal?.aborted) {
-				return cancelledResult(params.question, mode, context);
-			}
-
+			if (signal?.aborted) return cancelledResult(params.question, mode, context);
 			if (!ctx.hasUI) {
-				return unavailableResult(params.question, mode, "ask_user_question requires interactive mode UI", context);
+				return unavailableResult(
+					params.question,
+					mode,
+					"ask_user_question is unavailable because the user has no interactive UI; ask the question in chat instead.",
+					context,
+				);
 			}
 
+			emitAskUserPrompt(pi, params.question, context, mode, options);
 			return withUILock(async () => {
-				if (mode === "text") {
-					const editorTitle = context ? `${params.question}\n\n${context}` : params.question;
-					const answer = await ctx.ui.editor(editorTitle);
-					if (answer === undefined) {
-						return cancelledResult(params.question, mode, context);
+				if (signal?.aborted) return cancelledResult(params.question, mode, context);
+				emitAskUserBlocked(pi, true);
+				try {
+					if (ctx.mode === "rpc") {
+						const answers = await askWithRpcDialogs(ctx, params.question, context, mode, options);
+						return answers
+							? buildResult(params.question, context, mode, answers)
+							: cancelledResult(params.question, mode, context);
 					}
-					return buildResult(params.question, context, mode, [
-						{ type: "text", label: answer.trim(), value: answer.trim() },
-					]);
-				}
 
-				if (mode === "single-select") {
-					const answer = await askSingleChoice(ctx, params.question, context, options);
-					if (!answer) {
-						return cancelledResult(params.question, mode, context);
+					if (mode === "text") {
+						const editorTitle = context ? `${params.question}\n\n${context}` : params.question;
+						const answer = await ctx.ui.editor(editorTitle);
+						return answer === undefined
+							? cancelledResult(params.question, mode, context)
+							: buildResult(params.question, context, mode, [{ type: "text", label: answer.trim(), value: answer.trim() }]);
 					}
-					return buildResult(params.question, context, mode, [answer]);
-				}
 
-				const answers = await askMultiChoice(ctx, params.question, context, options);
-				if (!answers) {
-					return cancelledResult(params.question, mode, context);
+					if (mode === "single-select") {
+						const answer = await askSingleChoice(ctx, params.question, context, options);
+						return answer
+							? buildResult(params.question, context, mode, [answer])
+							: cancelledResult(params.question, mode, context);
+					}
+
+					const answers = await askMultiChoice(ctx, params.question, context, options);
+					return answers
+						? buildResult(params.question, context, mode, answers)
+						: cancelledResult(params.question, mode, context);
+				} finally {
+					emitAskUserBlocked(pi, false);
 				}
-				return buildResult(params.question, context, mode, answers);
 			});
 		},
 
@@ -666,4 +767,11 @@ export default function askUserQuestion(pi: ExtensionAPI) {
 			return new Text(lines.join("\n"), 0, 0);
 		},
 	});
+	pi.on("before_agent_start", (_event, ctx) => reconcileAskUserQuestionTool(pi, ctx));
 }
+
+export const __test__ = {
+	normalizeOptions,
+	askWithRpcDialogs,
+	reconcileAskUserQuestionTool,
+};

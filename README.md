@@ -10,7 +10,7 @@ This is a personal system I built for myself, shared as-is. Built as a pi config
 
 - `skills/teach/` — the philosophy and the process
 - `skills/visualize/` — adds a correct, minimal diagram to a lesson when an idea is clearer as a picture
-- `extensions/ask-user-question/` — the agent asks you questions through a UI popup
+- `extensions/ask-user-question.ts` — one-question UI popup (native RPC dialogs when needed); emits `pi-learn:ask-user:prompt` and `pi-learn:ask-user:blocked` for cooperating extensions
 - `extensions/quiz/` — graded questions with instant feedback (✓/✗, correct answer, explanation)
 - `extensions/md-log/` — link a markdown file to the session
 - `extensions/visual-tools/` — tools for visualization subagents
