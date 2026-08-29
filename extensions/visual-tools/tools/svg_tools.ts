@@ -8,7 +8,7 @@
  *                 `save_as`, also publish it into <cwd>/viz
  *
  * Bundled inside the visual-tools extension and exposed to subagents via the
- * interactive-subagents `registerToolExtension` hook (see ../index.ts). Loaded
+ * pi-herdr-subagents `registerToolExtension` hook (see ../index.ts). Loaded
  * by the spawned child pi process for any subagent whose `tools:` frontmatter
  * includes these names (currently just svg-maker). All three names map to this
  * one file.

@@ -1,7 +1,7 @@
 {
   "name": "@learn/visual-tools",
   "version": "0.1.0",
-  "description": "visual-tools: custom subagent tools (write/edit/render for Mermaid and SVG) for the interactive-subagents extension.",
+  "description": "visual-tools: custom subagent tools (write/edit/render for Mermaid and SVG) for the pi-herdr-subagents extension.",
   "type": "module",
   "private": true,
   "dependencies": {
