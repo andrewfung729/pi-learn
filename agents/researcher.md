@@ -2,7 +2,7 @@
 name: researcher
 description: Web researcher — searches the web and synthesizes findings
 tools: web_search, fetch_content
-model: z-ai/glm-5.3
+model: zai/glm-5.3
 thinking: medium
 system-prompt: append
 auto-exit: true
