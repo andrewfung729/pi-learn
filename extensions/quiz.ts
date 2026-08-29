@@ -33,6 +33,7 @@ interface DisplayOption extends QuizOption {
 	id: string;
 	index: number;
 	isSubmit?: boolean;
+	isCancel?: boolean;
 }
 
 interface OptionAnswer {
@@ -48,6 +49,7 @@ interface OptionAnswer {
 const DONT_KNOW_VALUE = "__dont_know__";
 const DONT_KNOW_LABEL = "I don't know";
 const DONT_KNOW_INDEX = 0; // real options are 1-based; submit uses -1
+const CANCEL_LABEL = "Cancel quiz";
 
 // Unified response from either ask* component. answers holds the real
 // selections (empty when dontKnow); note is the optional free-text the user
@@ -374,7 +376,7 @@ function renderFeedback(
 		addWrapped(lines, theme.fg("text", explanation), width, " ");
 	}
 	lines.push("");
-	add(theme.fg("dim", " Enter/Esc to continue"));
+	add(theme.fg("dim", " Enter to continue"));
 }
 
 // Top border + question + optional context. Shared by both components.
@@ -393,6 +395,17 @@ function pushDontKnowRow(lines: string[], theme: any, width: number, focused: bo
 	lines.push("");
 	const prefix = focused ? theme.fg("accent", "> ") : "  ";
 	const styled = focused ? theme.fg("accent", DONT_KNOW_LABEL) : theme.fg("dim", DONT_KNOW_LABEL);
+	lines.push(truncateToWidth(`${prefix}${styled}`, width));
+}
+
+// A visible, keyboard-reachable exit replaces the hidden Esc cancellation
+// affordance. Its separated action area mirrors rpiv-ask-user-question's
+// "Chat about this" row, while keeping this terminal quiz self-contained.
+function pushCancelRow(lines: string[], theme: any, width: number, focused: boolean): void {
+	lines.push("");
+	lines.push(truncateToWidth(theme.fg("borderMuted", "─".repeat(width)), width));
+	const prefix = focused ? theme.fg("accent", "> ") : "  ";
+	const styled = focused ? theme.fg("warning", CANCEL_LABEL) : theme.fg("muted", CANCEL_LABEL);
 	lines.push(truncateToWidth(`${prefix}${styled}`, width));
 }
 
@@ -432,6 +445,7 @@ async function askSingleChoice(
 		index: index + 1,
 	}));
 	const dontKnowNav = allOptions.length; // nav index of the "I don't know" row
+	const cancelNav = dontKnowNav + 1;
 
 	return ctx.ui.custom<QuizResponse | null>(
 		(tui: any, theme: any, _kb: any, done: (result: QuizResponse | null) => void) => {
@@ -469,9 +483,7 @@ async function askSingleChoice(
 
 			function handleInput(data: string) {
 				if (phase === "feedback") {
-					if (matchesKey(data, Key.enter) || matchesKey(data, Key.escape)) {
-						done(response());
-					}
+					if (matchesKey(data, Key.enter)) done(response());
 					return;
 				}
 
@@ -503,11 +515,15 @@ async function askSingleChoice(
 					return;
 				}
 				if (matchesKey(data, Key.down)) {
-					optionIndex = Math.min(dontKnowNav, optionIndex + 1);
+					optionIndex = Math.min(cancelNav, optionIndex + 1);
 					refresh();
 					return;
 				}
 				if (matchesKey(data, Key.enter)) {
+					if (optionIndex === cancelNav) {
+						done(null);
+						return;
+					}
 					if (optionIndex === dontKnowNav) {
 						dontKnow = true;
 						chosen = null;
@@ -519,9 +535,6 @@ async function askSingleChoice(
 					phase = "feedback";
 					refresh();
 					return;
-				}
-				if (matchesKey(data, Key.escape)) {
-					done(null);
 				}
 			}
 
@@ -568,6 +581,7 @@ async function askSingleChoice(
 				}
 
 				pushDontKnowRow(lines, theme, width, focus === "options" && optionIndex === dontKnowNav);
+				pushCancelRow(lines, theme, width, focus === "options" && optionIndex === cancelNav);
 
 				pushNoteField(lines, theme, width, editor, focus === "note");
 
@@ -575,7 +589,7 @@ async function askSingleChoice(
 				if (focus === "note") {
 					add(theme.fg("dim", " Type note • Ctrl+J newline • Enter back to options • Tab options • Esc back"));
 				} else {
-					add(theme.fg("dim", " ↑↓ navigate • Enter answer • Tab note • Esc cancel"));
+					add(theme.fg("dim", " ↑↓ navigate • Enter answer • Tab note"));
 				}
 				add(theme.fg("accent", "─".repeat(width)));
 				// Not cached when the note is focused: the editor renders a live cursor.
@@ -619,7 +633,8 @@ async function askMultiChoice(
 		index: DONT_KNOW_INDEX,
 	};
 	const submitItem: DisplayOption = { id: "submit", label: "Submit", value: "__submit__", index: -1, isSubmit: true };
-	const allItems: DisplayOption[] = [...choiceItems, dontKnowItem, submitItem];
+	const cancelItem: DisplayOption = { id: "cancel", label: CANCEL_LABEL, value: "__cancel__", index: -2, isCancel: true };
+	const allItems: DisplayOption[] = [...choiceItems, dontKnowItem, submitItem, cancelItem];
 
 	return ctx.ui.custom<QuizResponse | null>(
 		(tui: any, theme: any, _kb: any, done: (result: QuizResponse | null) => void) => {
@@ -687,9 +702,7 @@ async function askMultiChoice(
 
 			function handleInput(data: string) {
 				if (phase === "feedback") {
-					if (matchesKey(data, Key.enter) || matchesKey(data, Key.escape)) {
-						done(response());
-					}
+					if (matchesKey(data, Key.enter)) done(response());
 					return;
 				}
 
@@ -728,22 +741,22 @@ async function askMultiChoice(
 
 				const current = allItems[optionIndex];
 				if (matchesKey(data, Key.space)) {
-					if (current.isSubmit) return;
+					if (current.isSubmit || current.isCancel) return;
 					toggleOption(current);
 					return;
 				}
 
 				if (matchesKey(data, Key.enter)) {
+					if (current.isCancel) {
+						done(null);
+						return;
+					}
 					if (current.isSubmit) {
 						submit();
 						return;
 					}
 					toggleOption(current);
 					return;
-				}
-
-				if (matchesKey(data, Key.escape)) {
-					done(null);
 				}
 			}
 
@@ -782,6 +795,11 @@ async function askMultiChoice(
 					const isFocused = focus === "options" && i === optionIndex;
 					const prefix = isFocused ? theme.fg("accent", "> ") : "  ";
 
+					if (item.isCancel) {
+						pushCancelRow(lines, theme, width, isFocused);
+						continue;
+					}
+
 					if (item.isSubmit) {
 						const label = selected.size > 0 ? `✓ ${item.label} (${selected.size} selected)` : `○ ${item.label}`;
 						const styled = isFocused
@@ -819,7 +837,7 @@ async function askMultiChoice(
 				if (focus === "note") {
 					add(theme.fg("dim", " Type note • Ctrl+J newline • Enter back to options • Tab options • Esc back"));
 				} else {
-					add(theme.fg("dim", " ↑↓ navigate • Space toggle • Enter submit • Tab note • Esc cancel"));
+					add(theme.fg("dim", " ↑↓ navigate • Space toggle • Enter submit • Tab note"));
 				}
 				add(theme.fg("accent", "─".repeat(width)));
 				// Not cached when the note is focused: the editor renders a live cursor.
