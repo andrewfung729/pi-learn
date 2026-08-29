@@ -1,10 +1,24 @@
-# learn
+# pi-learn
 
 [![video](assets/thumbnail.png)](https://www.youtube.com/watch?v=kzcI5F4tGiU)
 
-My AI learning system from this video: [How I Use AI to Learn Things](https://www.youtube.com/watch?v=kzcI5F4tGiU).
+My fork of [amosblomqvist/learn](https://github.com/amosblomqvist/learn) — Amos Blomqvist's AI learning system for the [pi](https://github.com/earendil-works/pi) coding agent, from his video [How I Use AI to Learn Things](https://www.youtube.com/watch?v=kzcI5F4tGiU).
 
-This is a personal system I built for myself, shared as-is. Built as a pi configuration: the teaching philosophy encoded in a skill, a few small extensions, and agent definitions.
+The core idea is his: the teaching philosophy lives in a skill, small extensions structure the session, and subagents handle research and visuals. This fork adapts it to how I run learning sessions and hardens the pieces I rely on.
+
+## My use case
+
+Every topic I want to learn gets its own repo with this checked out as `.pi`. Two things make that work as an isolated learning workspace:
+
+- `SYSTEM.md` keeps the session a learning session — no drifting into coding or project changes.
+- `settings.json` shadows my global skills/extensions, so the workspace loads only this teaching config, nothing else.
+
+## What I changed from upstream
+
+- **Subagent stack** — swapped pi-interactive-subagents (tmux) for [pi-herdr-subagents](https://github.com/andrewfung729/pi-herdr-subagents) (herdr); agent definitions updated to match.
+- **Isolated project config** — added `settings.json`, `SYSTEM.md`, and `AGENTS.md`.
+- **Tests & toolchain** — root pnpm workspace + tsconfig, with `node --test` coverage for the extensions' pure logic (`pnpm test`, `pnpm typecheck`).
+- **Extension fixes** — RPC dialog support in `ask-user-question`, explicit cancel action in `quiz`, refreshed subagent models.
 
 ## What's in it
 
@@ -21,7 +35,7 @@ This is a personal system I built for myself, shared as-is. Built as a pi config
 This repo **is** a `.pi` directory. From your learning project's root:
 
 ```bash
-git clone https://github.com/amosblomqvist/learn .pi
+git clone https://github.com/andrewfung729/pi-learn .pi
 ```
 
 Then open pi in that directory. (Or copy the pieces you want into your existing project config.)
@@ -48,4 +62,4 @@ pnpm typecheck
 
 You can run the system without subagents. The main session does the teaching. You just lose the researcher (truth verification) and the generated visuals.
 
-The teaching skill is written for one learner (me). Edit the skill to fit how you learn best.
+The teaching skill is written for one learner. Edit `skills/teach/` to fit how you learn best.
