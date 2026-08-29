@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
 	Editor,
 	type EditorTheme,
@@ -7,7 +7,7 @@ import {
 	matchesKey,
 	truncateToWidth,
 	wrapTextWithAnsi,
-} from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -419,7 +419,7 @@ function makeNoteEditor(tui: any, theme: any): Editor {
 }
 
 async function askSingleChoice(
-	ctx: any,
+	ctx: ExtensionContext,
 	question: string,
 	context: string | undefined,
 	options: QuizOption[],
@@ -599,7 +599,7 @@ async function askSingleChoice(
 }
 
 async function askMultiChoice(
-	ctx: any,
+	ctx: ExtensionContext,
 	question: string,
 	context: string | undefined,
 	options: QuizOption[],
@@ -1060,3 +1060,13 @@ export default function quiz(pi: ExtensionAPI) {
 		},
 	});
 }
+
+/** Pure helpers exposed for unit tests (grading / option normalization). */
+export const __test__ = {
+	normalizeOptions,
+	shuffleOptions,
+	coerceCorrectAnswer,
+	resolveCorrect,
+	isCorrect,
+	sortAnswers,
+};

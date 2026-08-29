@@ -1,0 +1,9 @@
+packages:
+  - "extensions/visual-tools"
+
+# pnpm 11: build-script allowlist lives here (not package.json "pnpm" field).
+# mermaid-cli needs puppeteer; protobufjs is a transitive native dep.
+allowBuilds:
+  puppeteer: true
+  protobufjs: true
+  "@google/genai": false

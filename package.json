@@ -1,0 +1,19 @@
+{
+  "name": "pi-learn",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pi learning system — teach skill, quiz/ask extensions, and visual subagent tools",
+  "type": "module",
+  "packageManager": "pnpm@11.24.0",
+  "scripts": {
+    "test": "node --test test/**/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.84.3",
+    "@earendil-works/pi-tui": "^0.84.3",
+    "@sinclair/typebox": "^0.34.49",
+    "@types/node": "^26.4.0",
+    "typescript": "^5.9.2"
+  }
+}
