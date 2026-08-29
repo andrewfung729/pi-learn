@@ -1,0 +1,16 @@
+{
+  "packages": [
+    {
+      "source": "npm:@juicesharp/rpiv-ask-user-question",
+      "autoload": false,
+      "extensions": ["-index.ts"]
+    }
+  ],
+  "skills": [
+    "~/.agents/skills",
+    "!**/.agents/skills/**",
+    "~/.pi/agent/skills",
+    "!**/.pi/agent/skills/**"
+  ],
+  "extensions": ["~/.pi/agent/extensions", "!**/.pi/agent/extensions/**"]
+}
