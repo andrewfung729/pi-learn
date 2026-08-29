@@ -134,9 +134,19 @@ describe("latexToText", () => {
     assert.equal(quiz.latexToText("成本 $5"), "成本 $5");
   });
 
-  it("leaves unknown commands and superscripts visibly raw, not mangled", () => {
+  it("unwraps LaTeX thousands separators ({,})", () => {
+    assert.equal(
+      quiz.latexToText("若 P=$10{,}000$、r=5\\%、n=3，則本利和 A 為何？"),
+      "若 P=10,000、r=5%、n=3，則本利和 A 為何？",
+    );
+    assert.equal(quiz.latexToText("$11{,}500.00$"), "11,500.00");
+  });
+
+  it("leaves script args, frac args, and escaped braces visibly raw, not mangled", () => {
     assert.equal(quiz.latexToText("$\\frac{a}{b}$"), "\\frac{a}{b}");
     assert.equal(quiz.latexToText("$x^2$"), "x^2");
+    assert.equal(quiz.latexToText("$x^{2}$"), "x^{2}");
+    assert.equal(quiz.latexToText("$\\{1,2\\}$"), "{1,2}");
   });
 
   it("returns plain text untouched", () => {

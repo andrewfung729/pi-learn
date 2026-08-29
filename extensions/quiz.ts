@@ -248,14 +248,23 @@ const SYMBOL_RE = new RegExp(
 	"g",
 );
 
+// Grouping braces whose whole content is one punctuation char are LaTeX
+// thousands/decimal separators (`$10{,}000$` renders as 10,000) — unwrap
+// them. Escaped braces (\{;\}) are literal and stay. Everything else
+// (x^{2}, \frac{a}{b}, \begin{cases}) is untouched: visibly raw beats
+// silently mangled.
+function unwrapMathGroups(m: string): string {
+	return m.replace(/(?<!\u0000)\{([,;.])\}/g, "$1");
+}
+
 export function latexToText(input: string): string {
 	if (!input.includes("$") && !input.includes("\\")) return input;
 	let s = input.replace(/\\([%$&#_{}~^])/g, `${ESC}$1`);
 	// Display math first, then inline — otherwise $$…$$ would be misread as a
 	// pair of empty inline spans. Non-greedy so consecutive $…$ spans don't
 	// merge; an unpaired $ (lone currency sign) never matches and survives.
-	s = s.replace(/\$\$([\s\S]*?)\$\$/g, (_, m: string) => m.trim());
-	s = s.replace(/\$([^$\n]+?)\$/g, "$1");
+	s = s.replace(/\$\$([\s\S]*?)\$\$/g, (_, m: string) => unwrapMathGroups(m.trim()));
+	s = s.replace(/\$([^$\n]+?)\$/g, (_, m: string) => unwrapMathGroups(m));
 	s = s.replace(SYMBOL_RE, (_, name: string) => SYMBOLS[name]);
 	return s.split(ESC).join("");
 }
