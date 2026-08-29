@@ -18,14 +18,14 @@ Every topic I want to learn gets its own repo with this checked out as `.pi`. Tw
 - **Subagent stack** — swapped pi-interactive-subagents (tmux) for [pi-herdr-subagents](https://github.com/andrewfung729/pi-herdr-subagents) (herdr); agent definitions updated to match.
 - **Isolated project config** — added `settings.json`, `SYSTEM.md`, and `AGENTS.md`.
 - **Tests & toolchain** — root pnpm workspace + tsconfig, with `node --test` coverage for the extensions' pure logic (`pnpm test`, `pnpm typecheck`).
-- **Extension fixes** — RPC dialog support in `ask-user-question`, explicit cancel action in `quiz`, refreshed subagent models.
+- **Extension fixes** — RPC dialog support in `ask-user-question`, explicit cancel action and LaTeX-safe display in `quiz`, refreshed subagent models.
 
 ## What's in it
 
 - `skills/teach/` — the philosophy and the process
 - `skills/visualize/` — adds a correct, minimal diagram to a lesson when an idea is clearer as a picture
 - `extensions/ask-user-question.ts` — one-question UI popup (native RPC dialogs when needed); emits `pi-learn:ask-user:prompt` and `pi-learn:ask-user:blocked` for cooperating extensions
-- `extensions/quiz/` — graded questions with instant feedback (✓/✗, correct answer, explanation)
+- `extensions/quiz.ts` — graded questions with instant feedback (✓/✗, correct answer, explanation). Quiz content is written in plain Unicode math (`0.5`, `50%`, `x²`) because it pops up live in a terminal that can't render LaTeX; a thin draw-time fallback strips any `$…$`/`\%` that leaks through, while the md-log transcript keeps whatever the agent sent
 - `extensions/md-log/` — link a markdown file to the session
 - `extensions/visual-tools/` — tools for visualization subagents
 - `agents/` — `researcher`, `svg-maker`, `mermaid-maker`: the subagents the system delegates to

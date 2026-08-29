@@ -103,3 +103,46 @@ describe("shuffleOptions", () => {
     assert.notEqual(shuffled, options);
   });
 });
+
+describe("latexToText", () => {
+  it("strips inline math delimiters", () => {
+    assert.equal(
+      quiz.latexToText("某社会的“代际收入弹性”为 $0.5$。它通常表示什么？"),
+      "某社会的“代际收入弹性”为 0.5。它通常表示什么？",
+    );
+  });
+
+  it("unescapes \\% inside and outside math", () => {
+    assert.equal(
+      quiz.latexToText("父母收入高 $50\\%$，子女成年收入平均高约 $10\\%$"),
+      "父母收入高 50%，子女成年收入平均高约 10%",
+    );
+    assert.equal(quiz.latexToText("增长 50\\% 以上"), "增长 50% 以上");
+  });
+
+  it("maps high-frequency symbols", () => {
+    assert.equal(quiz.latexToText("$\\pi \\approx 3.14$"), "π ≈ 3.14");
+    assert.equal(quiz.latexToText("$a \\times b$"), "a × b");
+    assert.equal(quiz.latexToText("$x \\geq 5$"), "x ≥ 5");
+  });
+
+  it("flattens display math", () => {
+    assert.equal(quiz.latexToText("$$\nE = mc^2\n$$"), "E = mc^2");
+  });
+
+  it("leaves unpaired dollar signs alone", () => {
+    assert.equal(quiz.latexToText("成本 $5"), "成本 $5");
+  });
+
+  it("leaves unknown commands and superscripts visibly raw, not mangled", () => {
+    assert.equal(quiz.latexToText("$\\frac{a}{b}$"), "\\frac{a}{b}");
+    assert.equal(quiz.latexToText("$x^2$"), "x^2");
+  });
+
+  it("returns plain text untouched", () => {
+    assert.equal(
+      quiz.latexToText("父母收入高 10%，子女收入高 5%"),
+      "父母收入高 10%，子女收入高 5%",
+    );
+  });
+});

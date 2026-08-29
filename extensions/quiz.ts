@@ -21,6 +21,13 @@ import { Type } from "@sinclair/typebox";
 // It is intentionally options-only: single-select or multi-select. There is no
 // free-text mode and no "Other" option, because a free-text answer can't be
 // graded against a correct index.
+//
+// Display note: quiz content is taught to arrive in plain Unicode math (teach
+// skill + promptGuidelines), because THIS ui is a dumb terminal — `$50\%$`
+// drawn raw is escape-soup — while the md-log transcript renders in Obsidian.
+// Every string drawn here still passes through latexToText(), a minimal
+// fallback for LaTeX leaks; strings returned to the agent and stored in
+// details (which md-log persists) keep whatever the agent sent.
 // ────────────────────────────────────────────────────────────────────────────
 
 interface QuizOption {
@@ -216,6 +223,44 @@ function addWrapped(lines: string[], text: string, width: number, indent = ""): 
 	}
 }
 
+// ── LaTeX → terminal-plain text (minimal fallback) ───────────────────────
+// Quiz content is taught to arrive in plain Unicode already (teach skill +
+// promptGuidelines), so this is deliberately NOT a LaTeX converter — just a
+// janitor for leaks: leftover $…$ delimiters, \% escapes, and a dozen
+// high-frequency symbols. Unknown commands (\frac, \sqrt, …) are left
+// visibly raw, never silently mangled. Strings returned to the agent and
+// stored in details (which md-log persists) keep their LaTeX.
+
+// Placeholder guarding escaped literals (\%, \$, …); the char is restored
+// verbatim at the end. Also keeps \$ from being read as a math delimiter.
+const ESC = "\u0000";
+
+const SYMBOLS: Record<string, string> = {
+	times: "×", div: "÷", cdot: "·", pm: "±", leq: "≤", le: "≤", geq: "≥",
+	ge: "≥", neq: "≠", ne: "≠", approx: "≈", infty: "∞", to: "→",
+	pi: "π", alpha: "α", beta: "β", Delta: "Δ", delta: "δ", checkmark: "✓",
+};
+
+// Longest names first; the lookahead keeps short names (\to, \pi) from
+// matching inside longer words.
+const SYMBOL_RE = new RegExp(
+	`\\\\(${Object.keys(SYMBOLS).sort((a, b) => b.length - a.length).join("|")})(?![a-zA-Z])`,
+	"g",
+);
+
+export function latexToText(input: string): string {
+	if (!input.includes("$") && !input.includes("\\")) return input;
+	let s = input.replace(/\\([%$&#_{}~^])/g, `${ESC}$1`);
+	// Display math first, then inline — otherwise $$…$$ would be misread as a
+	// pair of empty inline spans. Non-greedy so consecutive $…$ spans don't
+	// merge; an unpaired $ (lone currency sign) never matches and survives.
+	s = s.replace(/\$\$([\s\S]*?)\$\$/g, (_, m: string) => m.trim());
+	s = s.replace(/\$([^$\n]+?)\$/g, "$1");
+	s = s.replace(SYMBOL_RE, (_, name: string) => SYMBOLS[name]);
+	return s.split(ESC).join("");
+}
+// ────────────────────────────────────────────────────────────────────────────
+
 function isCorrect(selectedIndices: number[], correctIndices: number[]): boolean {
 	if (selectedIndices.length !== correctIndices.length) return false;
 	const a = [...selectedIndices].sort((x, y) => x - y);
@@ -331,6 +376,7 @@ function renderFeedback(
 	for (let i = 0; i < options.length; i++) {
 		const index = i + 1;
 		const opt = options[i];
+		const label = latexToText(opt.label);
 		const isSelected = selectedSet.has(index);
 		const isKey = correctSet.has(index);
 		let marker: string;
@@ -353,19 +399,19 @@ function renderFeedback(
 			marker = " ";
 			color = "dim";
 		}
-		add(theme.fg(color, ` ${marker} ${index}. ${opt.label}`));
+		add(theme.fg(color, ` ${marker} ${index}. ${label}`));
 	}
 
 	lines.push("");
 	if (dontKnow) {
 		add(theme.fg("warning", " · You said: I don't know"));
-		const correctStr = correctIndices.map((i) => formatOptionRef(options, i)).join(", ");
+		const correctStr = latexToText(correctIndices.map((i) => formatOptionRef(options, i)).join(", "));
 		addWrapped(lines, theme.fg("muted", `Correct answer: ${correctStr}`), width, " ");
 	} else if (correct) {
 		add(theme.fg("success", " ✓ Correct!"));
 	} else {
 		add(theme.fg("error", " ✗ Incorrect."));
-		const correctStr = correctIndices.map((i) => formatOptionRef(options, i)).join(", ");
+		const correctStr = latexToText(correctIndices.map((i) => formatOptionRef(options, i)).join(", "));
 		addWrapped(lines, theme.fg("muted", `Correct answer: ${correctStr}`), width, " ");
 	}
 	if (note) {
@@ -373,7 +419,7 @@ function renderFeedback(
 	}
 	if (explanation) {
 		lines.push("");
-		addWrapped(lines, theme.fg("text", explanation), width, " ");
+		addWrapped(lines, theme.fg("text", latexToText(explanation)), width, " ");
 	}
 	lines.push("");
 	add(theme.fg("dim", " Enter to continue"));
@@ -382,10 +428,10 @@ function renderFeedback(
 // Top border + question + optional context. Shared by both components.
 function pushHeader(lines: string[], theme: any, width: number, question: string, context: string | undefined): void {
 	lines.push(truncateToWidth(theme.fg("accent", "─".repeat(width)), width));
-	addWrapped(lines, theme.fg("text", question), width, " ");
+	addWrapped(lines, theme.fg("text", latexToText(question)), width, " ");
 	if (context) {
 		lines.push("");
-		addWrapped(lines, theme.fg("muted", context), width, " ");
+		addWrapped(lines, theme.fg("muted", latexToText(context)), width, " ");
 	}
 }
 
@@ -572,11 +618,11 @@ async function askSingleChoice(
 					const option = allOptions[i];
 					const selected = focus === "options" && i === optionIndex;
 					const prefix = selected ? theme.fg("accent", "> ") : "  ";
-					const label = `${option.index}. ${option.label}`;
+					const label = `${option.index}. ${latexToText(option.label)}`;
 					const styled = selected ? theme.fg("accent", label) : theme.fg("text", label);
 					add(`${prefix}${styled}`);
 					if (option.description) {
-						addWrapped(lines, theme.fg("muted", option.description), width, "     ");
+						addWrapped(lines, theme.fg("muted", latexToText(option.description)), width, "     ");
 					}
 				}
 
@@ -820,11 +866,11 @@ async function askMultiChoice(
 
 					const checked = selected.has(item.id);
 					const marker = checked ? "[x]" : "[ ]";
-					const label = `${marker} ${item.index}. ${item.label}`;
+					const label = `${marker} ${item.index}. ${latexToText(item.label)}`;
 					const styled = isFocused ? theme.fg("accent", label) : theme.fg(checked ? "success" : "text", label);
 					add(`${prefix}${styled}`);
 					if (item.description) {
-						addWrapped(lines, theme.fg("muted", item.description), width, "     ");
+						addWrapped(lines, theme.fg("muted", latexToText(item.description)), width, "     ");
 					}
 				}
 
@@ -904,6 +950,7 @@ export default function quiz(pi: ExtensionAPI) {
 			'correctAnswer is REQUIRED and is the option value, not a position number. Single-select: one string (e.g. "mercury"). Multi-select: an array of strings (e.g. ["belize", "niue"]).',
 			"Always pass the option's `value` string as correctAnswer — it is self-checking and prevents miscounting positions. A value that matches no option is a hard error.",
 			"explanation is REQUIRED — always say why the correct answer is correct.",
+			"quiz content renders live in a plain terminal that cannot render math. Write questions, options, and explanations in plain Unicode math — `0.5`, `50%`, `x²`, `π ≈ 3.14`, `≤` — not LaTeX (`$0.5$`, `50\\%`). LaTeX is for your chat prose, which renders in Obsidian.",
 			"Multi-select is graded as an exact-set match: the user is correct only if they select every correct option and no incorrect ones.",
 			"There is no free-text mode. An 'I don't know' choice is ALWAYS added automatically — provide ONLY the real, gradable options (at least two). Never add your own uncertainty/opt-out option like 'I don't know', 'I'm not sure', or 'Not sure'; that is handled for you and a manual one would be redundant or gradable-as-wrong.",
 			"If a result comes back as dontKnow, the user honestly did not know and did NOT guess — treat it as a genuine knowledge gap to teach into, not as a wrong answer.",
@@ -996,7 +1043,7 @@ export default function quiz(pi: ExtensionAPI) {
 			const options = normalizeOptions(
 				args.options as Array<{ label: string; value?: string; description?: string }> | undefined,
 			);
-			let text = theme.fg("toolTitle", theme.bold("quiz ")) + theme.fg("muted", args.question);
+			let text = theme.fg("toolTitle", theme.bold("quiz ")) + theme.fg("muted", latexToText(args.question as string));
 			if (args.multiSelect) {
 				text += theme.fg("dim", " [multi-select]");
 			}
@@ -1034,6 +1081,7 @@ export default function quiz(pi: ExtensionAPI) {
 					: details.answers.map((a) => ({ index: a.index, label: a.label }));
 
 			for (const opt of displayed) {
+				const label = latexToText(opt.label);
 				const isSelected = selectedSet.has(opt.index);
 				const isKey = correctSet.has(opt.index);
 				let mark: string;
@@ -1041,19 +1089,19 @@ export default function quiz(pi: ExtensionAPI) {
 				if (details.dontKnow) {
 					// No guess — only reveal the correct answer(s); never show ✗.
 					mark = isKey ? theme.fg("success", "✓ ") : "  ";
-					body = isKey ? theme.fg("success", `${opt.index}. ${opt.label}`) : theme.fg("dim", `${opt.index}. ${opt.label}`);
+					body = isKey ? theme.fg("success", `${opt.index}. ${label}`) : theme.fg("dim", `${opt.index}. ${label}`);
 				} else if (isSelected && isKey) {
 					mark = theme.fg("success", "✓ ");
-					body = theme.fg("accent", `${opt.index}. ${opt.label}`);
+					body = theme.fg("accent", `${opt.index}. ${label}`);
 				} else if (isSelected && !isKey) {
 					mark = theme.fg("error", "✗ ");
-					body = theme.fg("error", `${opt.index}. ${opt.label}`);
+					body = theme.fg("error", `${opt.index}. ${label}`);
 				} else if (!isSelected && isKey) {
 					mark = theme.fg("success", "✓ ");
-					body = theme.fg("success", `${opt.index}. ${opt.label}`);
+					body = theme.fg("success", `${opt.index}. ${label}`);
 				} else {
 					mark = "  ";
-					body = theme.fg("dim", `${opt.index}. ${opt.label}`);
+					body = theme.fg("dim", `${opt.index}. ${label}`);
 				}
 				lines.push(`${mark}${body}`);
 			}
@@ -1071,7 +1119,7 @@ export default function quiz(pi: ExtensionAPI) {
 			}
 
 			if (details.explanation) {
-				lines.push(theme.fg("muted", details.explanation));
+				lines.push(theme.fg("muted", latexToText(details.explanation)));
 			}
 
 			return new Text(lines.join("\n"), 0, 0);
@@ -1079,7 +1127,7 @@ export default function quiz(pi: ExtensionAPI) {
 	});
 }
 
-/** Pure helpers exposed for unit tests (grading / option normalization). */
+/** Pure helpers exposed for unit tests (grading / option normalization / LaTeX display). */
 export const __test__ = {
 	normalizeOptions,
 	shuffleOptions,
@@ -1087,4 +1135,5 @@ export const __test__ = {
 	resolveCorrect,
 	isCorrect,
 	sortAnswers,
+	latexToText,
 };
